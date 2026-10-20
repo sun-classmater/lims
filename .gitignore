@@ -1,0 +1,30 @@
+# IDE
+.idea/
+.vscode/
+*.iml
+
+# Frontend
+frontend/node_modules/
+frontend/dist/
+frontend/.npm-cache/
+frontend/.vite/
+*.tsbuildinfo
+frontend/.env
+frontend/.env.*
+!frontend/.env.example
+
+# Backend
+backend/target/
+backend/uploads/
+backend/src/main/resources/application-local.yml
+
+# 本地智能体与助手配置
+.codex/
+.agents/
+
+# Logs
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
