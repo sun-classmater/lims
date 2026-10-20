@@ -1,0 +1,5 @@
+# 复制本文件为 application-local.yml 后填写本地数据库口令。
+# application-local.yml 已被 .gitignore 忽略，不会提交到仓库。
+spring:
+  datasource:
+    password: your-password
