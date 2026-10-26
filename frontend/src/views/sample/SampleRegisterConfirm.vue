@@ -288,9 +288,9 @@
       >
         <el-row :gutter="12">
           <el-col
-            :span="12"
             v-for="field in maintainFields"
             :key="field.prop"
+            :span="12"
           >
             <el-form-item :label="field.label">
               <el-input

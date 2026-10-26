@@ -10,13 +10,13 @@
     >
       <div
         v-for="item in files"
-        :key="item.type"
+        :key="item.name"
         class="file-row"
       >
-        <span class="file-name">{{ item.name }}</span>
+        <span class="file-name">{{ item.originalName }}</span>
         <el-button
           size="small"
-          :loading="downloading === item.type"
+          :loading="downloading === item.name"
           @click="handleDownload(item)"
         >
           下载
@@ -42,29 +42,29 @@ import { onMounted, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 
 import {
-  downloadFileLibrary,
-  fetchFileLibrary,
-  type FileLibraryItem,
-} from '@/api/fileLibrary'
+  downloadStoredFile,
+  fetchStoredFiles,
+  type StoredFile,
+} from '@/api/fileManage'
 
 const loading = ref(false)
-const files = ref<FileLibraryItem[]>([])
+const files = ref<StoredFile[]>([])
 const downloading = ref('')
 
 async function loadFiles() {
   loading.value = true
   try {
-    files.value = await fetchFileLibrary()
+    files.value = await fetchStoredFiles()
   } finally {
     loading.value = false
   }
 }
 
-async function handleDownload(item: FileLibraryItem) {
-  downloading.value = item.type
+async function handleDownload(item: StoredFile) {
+  downloading.value = item.name
   try {
-    await downloadFileLibrary(item.type, item.name)
-    ElMessage.success(`已下载：${item.name}`)
+    await downloadStoredFile(item.name, item.originalName)
+    ElMessage.success(`已下载：${item.originalName}`)
   } catch (error) {
     ElMessage.error(error instanceof Error ? error.message : '下载失败，请稍后重试')
   } finally {

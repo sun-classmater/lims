@@ -19,7 +19,7 @@ export type ProjectStage =
   | 'examine'
   | 'delivery'
 
-export interface ProjectStageRow extends Record<string, unknown> {}
+export type ProjectStageRow = Record<string, unknown>
 
 export function isStageInfoVisible(
   row: ProjectStageRow,

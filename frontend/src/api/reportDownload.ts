@@ -37,6 +37,6 @@ export async function downloadReport(type: ReportType, bh: string): Promise<void
   })
   await saveBlobResponse(
     response,
-    `${bh}-${type === 'catl' ? 'CMA_CATL' : 'CMA'}报告.xls`,
+    `${bh}.doc`,
   )
 }

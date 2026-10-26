@@ -37,6 +37,8 @@ export interface PageConfig {
   canCreate?: boolean
   /** 右上角新增/导入按钮改为跳转到指定路由（如导入采样单），设置后不再弹新增窗口 */
   createLink?: string
+  /** 右上角按钮改为打开指定的导入窗口，如项目库导入 */
+  createAction?: 'import-lib'
   canEdit?: boolean
   canDelete?: boolean
   canUpload?: boolean

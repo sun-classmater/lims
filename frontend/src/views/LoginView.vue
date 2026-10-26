@@ -1,11 +1,24 @@
 <template>
   <main class="login-page">
+    <span class="login-glow login-glow-a" />
+    <span class="login-glow login-glow-b" />
     <el-card
       class="login-card"
       shadow="never"
     >
-      <h1>LIMS</h1>
-      <el-divider />
+      <div class="login-brand">
+        <div class="login-logo">
+          <el-icon>
+            <Platform />
+          </el-icon>
+        </div>
+        <div class="login-title">
+          LIMS
+        </div>
+        <div class="login-subtitle">
+          实验室信息管理系统
+        </div>
+      </div>
       <el-form
         ref="formRef"
         :model="form"
@@ -42,6 +55,9 @@
           登录
         </el-button>
       </el-form>
+      <p class="login-foot">
+        南通理工学院 · 软件专业综合实践
+      </p>
     </el-card>
   </main>
 </template>
@@ -49,6 +65,7 @@
 <script setup lang="ts">
 import { reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { Platform } from '@element-plus/icons-vue'
 import { ElMessage, type FormInstance, type FormRules } from 'element-plus'
 
 import { useAuthStore } from '@/stores/auth'
@@ -102,26 +119,98 @@ async function submit() {
 
 <style scoped>
 .login-page {
+  position: relative;
   min-height: 100vh;
   display: grid;
   place-items: center;
-  background: #f5f7fa;
+  overflow: hidden;
+  background: linear-gradient(135deg, #14304a 0%, #1f4a6b 45%, #2f6fb3 100%);
+}
+
+.login-glow {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(60px);
+  opacity: 0.45;
+  pointer-events: none;
+}
+
+.login-glow-a {
+  width: 420px;
+  height: 420px;
+  top: -120px;
+  left: -80px;
+  background: #4f95cf;
+}
+
+.login-glow-b {
+  width: 380px;
+  height: 380px;
+  right: -100px;
+  bottom: -140px;
+  background: #6fb3d9;
 }
 
 .login-card {
-  width: min(400px, calc(100vw - 32px));
-  border: 1px solid #e4e7ed;
-  border-radius: 8px;
+  position: relative;
+  z-index: 1;
+  width: min(420px, calc(100vw - 32px));
+  padding: 10px 8px 4px;
+  border: 1px solid rgba(255, 255, 255, 0.6);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.97);
+  box-shadow: 0 24px 60px rgba(6, 24, 42, 0.35);
+}
+
+.login-brand {
+  margin-bottom: 18px;
+  text-align: center;
+}
+
+.login-logo {
+  width: 52px;
+  height: 52px;
+  margin: 0 auto 10px;
+  display: grid;
+  place-items: center;
+  border-radius: 14px;
+  color: #ffffff;
+  font-size: 26px;
+  background: linear-gradient(135deg, #4f95cf, #2f6fb3);
+  box-shadow: 0 8px 20px rgba(47, 111, 179, 0.35);
+}
+
+.login-title {
+  color: #17324d;
+  font-size: 26px;
+  font-weight: 700;
+  letter-spacing: 2px;
+}
+
+.login-subtitle {
+  margin-top: 4px;
+  color: #7b8da3;
+  font-size: 13px;
+  letter-spacing: 1px;
 }
 
 .submit-button {
   width: 100%;
+  height: 42px;
+  border: none;
+  font-size: 15px;
+  letter-spacing: 2px;
+  background: linear-gradient(90deg, #2f6fb3, #4f95cf);
 }
 
-h1 {
-  margin: 0;
+.submit-button:hover {
+  background: linear-gradient(90deg, #265a93, #3f86c4);
+}
+
+.login-foot {
+  margin: 18px 0 0;
+  color: #95a5b8;
+  font-size: 12px;
   text-align: center;
-  font-size: 28px;
-  letter-spacing: 0;
 }
 </style>

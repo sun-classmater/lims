@@ -37,12 +37,12 @@ public class ReportDownloadController {
     ) {
         byte[] content = reportService.buildReport(type, bh);
         String fileName = reportService.fileName(type, bh);
-        String asciiName = fileName.replaceAll("[^\\x20-\\x7E]", "_");
+        String asciiName = "report-" + type + ".doc";
         String encodedName = URLEncoder.encode(fileName, StandardCharsets.UTF_8)
                 .replace("+", "%20");
 
         HttpHeaders headers = new HttpHeaders();
-        headers.setContentType(MediaType.parseMediaType("application/vnd.ms-excel"));
+        headers.setContentType(MediaType.parseMediaType("application/msword"));
         headers.add(
                 HttpHeaders.CONTENT_DISPOSITION,
                 "attachment; filename=\"" + asciiName + "\"; filename*=UTF-8''" + encodedName

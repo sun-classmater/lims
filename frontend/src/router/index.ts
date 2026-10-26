@@ -318,7 +318,7 @@ const router = createRouter({
         { prop: 'libName', label: '使用检验项目库', required: true },
       ],
       canCreate: true,
-      createLink: '/sample/import',
+      createAction: 'import-lib',
       createButtonText: '导入新的项目库',
       createButtonType: 'warning',
       createDialogTitle: '导入新的项目库',
@@ -327,19 +327,15 @@ const router = createRouter({
       deleteButtonText: '删除-慎重!',
       deleteConfirmText: '删除后不可恢复，确定要慎重删除该检验项目库吗？',
     }),
-    dataRoute('/base/upload', 'BaseUpload', {
-      entity: 'contract',
-      title: '中心资料上传',
-      primaryKeys: ['id'],
-      columns: [
-        { prop: 'id', label: 'ID', width: 80 },
-        { prop: 'htbh', label: '合同编号', minWidth: 150 },
-        { prop: 'customerId', label: '客户ID', width: 100 },
-        { prop: 'content', label: '合同内容', minWidth: 220 },
-        { prop: 'date', label: '日期', width: 120 },
-      ],
-      canUpload: true,
-    }),
+    {
+      path: '/base/upload',
+      name: 'BaseUpload',
+      component: () => import('@/views/base/UploadCenter.vue'),
+      meta: {
+        title: '中心资料上传',
+        layout: 'main',
+      },
+    },
     dataRoute('/standards/name', 'StandardName', {
       entity: 'basisname',
       title: '标准库名维护',

@@ -5,7 +5,10 @@
         <el-icon class="brand-icon">
           <Platform />
         </el-icon>
-        <span>LIMS</span>
+        <div class="brand-text">
+          <strong>LIMS</strong>
+          <small>实验室信息管理系统</small>
+        </div>
       </div>
 
       <el-menu
@@ -224,64 +227,106 @@ function handleUserCommand(command: string) {
   height: 100vh;
   display: grid;
   grid-template-columns: 240px 1fr;
-  background: #f4f6f8;
-  color: #1f2937;
+  background: var(--lims-bg);
+  color: #1f2d3d;
   overflow: hidden;
 }
 
 .sidebar {
   height: 100vh;
-  padding: 14px 10px;
+  padding: 16px 12px;
   box-sizing: border-box;
-  background: #ffffff;
-  border-right: 1px solid #e5e7eb;
+  background: linear-gradient(180deg, #17324d 0%, #1d4262 55%, #24506f 100%);
+  box-shadow: 4px 0 18px rgba(15, 35, 55, 0.18);
   overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.25) transparent;
 }
 
 .brand {
-  height: 54px;
+  height: 56px;
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 0 10px;
-  color: #1f2937;
-  font-size: 18px;
-  font-weight: 700;
+  padding: 0 8px 0 6px;
+  margin-bottom: 10px;
+  color: #ffffff;
 }
 
 .brand-icon {
-  color: #2563eb;
-  font-size: 22px;
+  width: 34px;
+  height: 34px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 10px;
+  background: linear-gradient(135deg, #4f95cf, #2f6fb3);
+  box-shadow: 0 4px 12px rgba(47, 111, 179, 0.4);
+  color: #ffffff;
+  font-size: 20px;
+}
+
+.brand-text {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.2;
+}
+
+.brand-text strong {
+  font-size: 18px;
+  letter-spacing: 0.5px;
+}
+
+.brand-text small {
+  margin-top: 2px;
+  color: #a9c3da;
+  font-size: 11px;
+  letter-spacing: 0.4px;
 }
 
 .sidebar-menu {
   border-right: 0;
   margin-top: 8px;
   background: transparent;
-  color: #1f2937;
+  --el-menu-bg-color: transparent;
+  --el-menu-text-color: #c8d8e8;
+  --el-menu-hover-bg-color: rgba(255, 255, 255, 0.08);
+  --el-menu-active-color: #ffffff;
 }
 
 .sidebar-menu :deep(.el-menu-item),
 .sidebar-menu :deep(.el-sub-menu__title) {
-  height: 42px;
+  height: 40px;
   margin: 2px 0;
-  border-radius: 7px;
-  line-height: 42px;
-  color: #1f2937;
+  border-radius: 8px;
+  line-height: 40px;
+  color: #c8d8e8;
 }
 
 .sidebar-menu :deep(.el-sub-menu__title) {
   font-weight: 600;
+  color: #e3edf6;
 }
 
 .sidebar-menu :deep(.el-menu-item:hover),
 .sidebar-menu :deep(.el-sub-menu__title:hover) {
-  background: #f3f4f6;
+  background: rgba(255, 255, 255, 0.08);
+  color: #ffffff;
 }
 
 .sidebar-menu :deep(.el-menu-item.is-active) {
-  background: #eef4ff;
-  color: #1d4ed8;
+  color: #ffffff;
+  font-weight: 600;
+  background: linear-gradient(90deg, rgba(79, 149, 207, 0.35), rgba(79, 149, 207, 0.12));
+  box-shadow: inset 3px 0 0 #6fb3d9;
+}
+
+.sidebar-menu :deep(.el-menu-item) {
+  padding-left: 32px !important;
+}
+
+.sidebar-menu :deep(.el-sub-menu__icon-arrow) {
+  color: #8fb0cc;
 }
 
 .workspace {
@@ -290,6 +335,7 @@ function handleUserCommand(command: string) {
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  background: var(--lims-content-bg);
 }
 
 .topbar {
@@ -298,41 +344,47 @@ function handleUserCommand(command: string) {
   align-items: center;
   justify-content: space-between;
   padding: 0 24px;
-  background: #ffffff;
-  border-bottom: 1px solid #e5e7eb;
+  background: rgba(255, 255, 255, 0.92);
+  backdrop-filter: blur(8px);
+  border-bottom: 1px solid var(--lims-line-strong);
+  box-shadow: 0 3px 12px rgba(23, 50, 77, 0.09);
+  z-index: 5;
 }
 
 .breadcrumb {
   display: flex;
   align-items: center;
-  gap: 8px;
-  color: #6b7280;
-  font-size: 14px;
+  gap: 6px;
+  color: #8a99ab;
+  font-size: 13px;
 }
 
 .breadcrumb-current {
-  color: #111827;
+  color: #1f2d3d;
+  font-size: 14px;
   font-weight: 600;
 }
 
 .user-trigger {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 5px 7px;
+  gap: 10px;
+  padding: 5px 10px 5px 6px;
   border: 0;
-  border-radius: 7px;
+  border-radius: 999px;
   background: transparent;
   color: #374151;
   cursor: pointer;
+  transition: background 0.2s;
 }
 
 .user-trigger:hover {
-  background: #f3f4f6;
+  background: #eef4fa;
 }
 
 .user-avatar {
-  background: #2563eb;
+  background: linear-gradient(135deg, #4f95cf, #2f6fb3);
+  box-shadow: 0 2px 8px rgba(47, 111, 179, 0.35);
   color: #ffffff;
   font-size: 13px;
 }
@@ -341,6 +393,10 @@ function handleUserCommand(command: string) {
   flex: 1;
   padding: 24px;
   overflow-y: auto;
+  background:
+    radial-gradient(1200px 600px at 100% -10%, #f7faff 0%, transparent 58%),
+    linear-gradient(180deg, #eef3f8 0%, var(--lims-content-bg) 180px);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.8);
 }
 
 .page-header {
@@ -372,7 +428,7 @@ function handleUserCommand(command: string) {
 }
 
 .table-card {
-  border: 1px solid #e4e7ed;
+  border: 1px solid var(--lims-line-strong);
   border-radius: 8px;
 }
 

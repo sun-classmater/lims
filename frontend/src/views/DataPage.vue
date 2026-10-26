@@ -335,6 +335,11 @@
         />
       </el-table>
     </el-dialog>
+    <LibImportDialog
+      v-if="config.createAction === 'import-lib'"
+      v-model="libImportVisible"
+      @imported="fetchRows"
+    />
   </div>
 </template>
 
@@ -362,6 +367,7 @@ import {
 } from '@/api/data'
 import ProjectNoLink from '@/components/ProjectNoLink.vue'
 import TaskNoLink from '@/components/TaskNoLink.vue'
+import LibImportDialog from '@/components/LibImportDialog.vue'
 import type { FileInfo } from '@/api/data'
 import type { PageConfig } from '@/types/page'
 import { entityLinkOfColumn } from '@/utils/entityDialogs'
@@ -389,6 +395,7 @@ const detailVisible = ref(false)
 const detailLoading = ref(false)
 const detailRows = ref<Array<Record<string, unknown>>>([])
 const detailRow = ref<Record<string, unknown> | null>(null)
+const libImportVisible = ref(false)
 
 const showFilters = computed(() => config.showFilters !== false)
 
@@ -485,6 +492,10 @@ function openCreate() {
 
 /** 配置了 createLink 时，新增/导入按钮改为跳转到对应页面 */
 function handleCreate() {
+  if (config.createAction === 'import-lib') {
+    libImportVisible.value = true
+    return
+  }
   if (config.createLink) {
     router.push(config.createLink)
     return
@@ -669,8 +680,9 @@ onMounted(() => {
   margin-bottom: 16px;
   padding: 14px 16px;
   background: #ffffff;
-  border: 1px solid #e4e7ed;
+  border: 1px solid var(--lims-line-strong);
   border-radius: 8px;
+  box-shadow: 0 2px 10px rgba(23, 50, 77, 0.05);
 }
 
 .file-list-title {
@@ -703,7 +715,7 @@ onMounted(() => {
 }
 
 .table-card {
-  border: 1px solid #e4e7ed;
+  border: 1px solid var(--lims-line-strong);
   border-radius: 8px;
 }
 

@@ -2,45 +2,51 @@ package com.lims.service;
 
 import com.lims.common.BusinessException;
 import com.lims.common.ResultCode;
-import org.apache.poi.hssf.usermodel.HSSFWorkbook;
-import org.apache.poi.ss.usermodel.BorderStyle;
-import org.apache.poi.ss.usermodel.Cell;
-import org.apache.poi.ss.usermodel.CellStyle;
-import org.apache.poi.ss.usermodel.Font;
-import org.apache.poi.ss.usermodel.HorizontalAlignment;
-import org.apache.poi.ss.usermodel.Row;
-import org.apache.poi.ss.usermodel.Sheet;
-import org.apache.poi.ss.usermodel.VerticalAlignment;
-import org.apache.poi.ss.usermodel.Workbook;
-import org.apache.poi.ss.util.CellRangeAddress;
+import org.springframework.core.io.ClassPathResource;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 
-import java.io.ByteArrayOutputStream;
 import java.io.IOException;
-import java.util.LinkedHashMap;
+import java.io.InputStream;
+import java.nio.charset.Charset;
+import java.time.LocalDate;
+import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * 样品管理 - 报告下载。
  *
- * 按样品编号（bh）把 project 表的登记信息与 prj_detail 的检验明细
- * 汇总成一份 Excel（.xls，POI HSSF）报告，供页面下载留存。
- *
- * 说明：旧系统的 CMA / CMA_CATL 报告是固定排版的正式报告模板，
- * 本服务生成的是包含同等数据的系统报告；后续若有正式模板，
- * 只需替换 buildReport 的排版部分，取数逻辑可复用。
+ * 以旧系统的两份 Word 报告为模板：
+ * - CMA_CATL：带资质认定号 [2020]农质检核（苏）字第0021号；
+ * - CMA：不带该行。
+ * 按样品编号替换封面与正文中的字段，并按检验明细重建结果表。
+ * 下载文件名为「样品编号-受检单位.doc」。
  */
 @Service
 public class ReportService {
 
-    private static final String[] DETAIL_HEADERS = {
-            "序号", "检测项目", "检验依据", "检验方法", "指标要求",
-            "检验结果", "单项评价", "单项评价说明", "检验员", "完成日期"
-    };
+    private static final Charset GBK = Charset.forName("GBK");
+    private static final Pattern ROW_PATTERN =
+            Pattern.compile("<w:tr\\b[^>]*>.*?</w:tr>", Pattern.DOTALL);
+    private static final Pattern CELL_PATTERN =
+            Pattern.compile("<w:tc\\b[^>]*>.*?</w:tc>", Pattern.DOTALL);
+    private static final Pattern TEXT_PATTERN =
+            Pattern.compile("<w:t(\\s[^>]*)?>(.*?)</w:t>", Pattern.DOTALL);
 
-    private static final int LAST_COLUMN = DETAIL_HEADERS.length - 1;
+    private static final String TEMPLATE_CONCLUSION =
+            "本样品所检项目按农业部公告第783号-1-2006、农业部公告第1077号-1-2008、"
+                    + "农业部公告第1077号-1-2012、GB/T19857-2005、GB/T20756-2006规定的要求进行判定，"
+                    + "其中恩诺沙星和环丙沙星超标，判定为不合格。";
+    private static final String TEMPLATE_BASIS =
+            "农业部公告第783号-1-2006、农业部公告第1077号-1-2008、"
+                    + "农业部公告第1077号-1-2012、GB/T19857-2005、GB/T20756-2006";
+    private static final DateTimeFormatter CN_DATE = DateTimeFormatter.ofPattern("yyyy年M月d日");
 
     private final JdbcTemplate jdbcTemplate;
 
@@ -61,15 +67,20 @@ public class ReportService {
         };
     }
 
-    /** 下载文件名，如 JK(2023)-SA-422-CMA报告.xls */
+    /** 下载文件名：样品编号-受检单位.doc */
     public String fileName(String type, String bh) {
-        String sampleBh = bh == null ? "" : bh.trim();
-        return sampleBh + "-" + normalizeType(type) + "报告.xls";
+        normalizeType(type);
+        Map<String, Object> project = loadProject(bh);
+        if (project == null) {
+            throw new BusinessException(ResultCode.NOT_FOUND.getCode(),
+                    "未找到样品编号为 " + text(bh) + " 的项目记录");
+        }
+        return text(bh) + "-" + unitOf(project) + ".doc";
     }
 
     public byte[] buildReport(String type, String bh) {
         String reportType = normalizeType(type);
-        String sampleBh = bh == null ? "" : bh.trim();
+        String sampleBh = text(bh);
         if (sampleBh.isEmpty()) {
             throw new BusinessException(ResultCode.BAD_REQUEST.getCode(), "缺少样品编号");
         }
@@ -79,241 +90,268 @@ public class ReportService {
             throw new BusinessException(ResultCode.NOT_FOUND.getCode(),
                     "未找到样品编号为 " + sampleBh + " 的项目记录");
         }
-
         List<Map<String, Object>> details = jdbcTemplate.queryForList(
-                "SELECT item_xh, testItem, basis, mathod, stdValue, jyResult, item_evaluate, "
-                        + "jyResult_note, userId_jyy FROM prj_detail "
-                        + "WHERE project_bh = ? ORDER BY item_xh",
-                sampleBh);
-        Map<String, String> userNames = loadUserNames();
-        String finishDate = firstText(project.get("date_jycomplete"), loadTaskFinishDate(sampleBh));
+                "SELECT item_xh, testItem, basis, stdValue, num_lowerst, jyResult, item_evaluate "
+                        + "FROM prj_detail WHERE project_bh = ? ORDER BY item_xh",
+                sampleBh
+        );
 
-        try (Workbook workbook = new HSSFWorkbook();
-             ByteArrayOutputStream output = new ByteArrayOutputStream()) {
-            Sheet sheet = workbook.createSheet("检测报告");
-            Styles styles = new Styles(workbook);
-            int rowIndex = 0;
+        String xml = readTemplate("CMA_CATL".equals(reportType)
+                ? "templates/report-catl.doc"
+                : "templates/report-cma.doc");
 
-            Row titleRow = sheet.createRow(rowIndex++);
-            titleRow.setHeightInPoints(28);
-            Cell titleCell = titleRow.createCell(0);
-            titleCell.setCellValue("检验检测报告（" + reportType + "）");
-            titleCell.setCellStyle(styles.title);
-            merge(sheet, 0, 0);
+        String basis = basisList(details);
+        String conclusion = conclusionText(basis, details);
 
-            Row sampleRow = sheet.createRow(rowIndex++);
-            Cell sampleCell = sampleRow.createCell(0);
-            sampleCell.setCellValue("样品编号：" + sampleBh);
-            sampleCell.setCellStyle(styles.subTitle);
-            merge(sheet, 1, 1);
+        xml = xml.replace(TEMPLATE_CONCLUSION, esc(conclusion));
+        xml = xml.replace("JK(2023)-SA-182", esc(sampleBh));
+        xml = xml.replace("鲢鱼", esc(text(project.get("productName"))));
+        xml = xml.replace("个体户", esc(unitOf(project)));
+        xml = xml.replace("专项监督", esc(text(project.get("jylb"))));
+        xml = xml.replace("如东县袁庄镇戴南村2组", esc(text(project.get("cyaddr"))));
+        xml = xml.replace("2023.12.13", esc(text(project.get("date_cy"))));
+        xml = xml.replace("4kg", esc(text(project.get("ypNum"))));
+        xml = xml.replace("徐汇宏", esc(samplerName(project)));
+        xml = xml.replace("2023年12月26日~2023年12月26日",
+                esc(dateRange(project.get("date_jystart"), project.get("date_jycomplete"))));
+        xml = xml.replace("2026年10月20日", esc(LocalDate.now().format(CN_DATE)));
+        xml = xml.replace(TEMPLATE_BASIS, esc(basis));
+        xml = rebuildTable(xml, details);
 
-            rowIndex++;
+        return xml.getBytes(GBK);
+    }
 
-            rowIndex = writeInfoRow(sheet, rowIndex, styles,
-                    "样品编号", sampleBh, "任务编号", text(project.get("taskno")));
-            rowIndex = writeInfoRow(sheet, rowIndex, styles,
-                    "受检单位", text(project.get("dwname_sj_nj")),
-                    "委托单位", text(project.get("dwname_wt_nj")));
-            rowIndex = writeInfoRow(sheet, rowIndex, styles,
-                    "生产单位", text(project.get("dwname_sc_nj")),
-                    "产品名称", text(project.get("productName")));
-            rowIndex = writeInfoRow(sheet, rowIndex, styles,
-                    "规格型号", text(project.get("ggxh")), "样品等级", text(project.get("ypdj")));
-            rowIndex = writeInfoRow(sheet, rowIndex, styles,
-                    "样品数量", text(project.get("ypNum")), "抽样地点", text(project.get("cyaddr")));
-            rowIndex = writeInfoRow(sheet, rowIndex, styles,
-                    "抽样日期", text(project.get("date_cy")), "登记日期", text(project.get("date_reg")));
-            rowIndex = writeInfoRow(sheet, rowIndex, styles,
-                    "检验完成日期", finishDate, "检验结论", text(project.get("result")));
-            rowIndex = writeInfoRow(sheet, rowIndex, styles,
-                    "项目登记备注", text(project.get("remarks_register")),
-                    "项目分解备注", text(project.get("remarks_div")));
+    /** 用检验明细重建结果表：保留表头与“以下空白”行，按模板行格式生成数据行 */
+    private String rebuildTable(String xml, List<Map<String, Object>> details) {
+        int anchor = xml.indexOf("单项结论");
+        if (anchor < 0) {
+            return xml;
+        }
+        int tableStart = xml.lastIndexOf("<w:tbl", anchor);
+        int tableEnd = xml.indexOf("</w:tbl>", anchor);
+        if (tableStart < 0 || tableEnd < 0) {
+            return xml;
+        }
+        tableEnd += "</w:tbl>".length();
+        String table = xml.substring(tableStart, tableEnd);
 
-            rowIndex++;
+        List<String> rows = new ArrayList<>();
+        List<Integer> starts = new ArrayList<>();
+        List<Integer> ends = new ArrayList<>();
+        Matcher rowMatcher = ROW_PATTERN.matcher(table);
+        while (rowMatcher.find()) {
+            rows.add(rowMatcher.group());
+            starts.add(rowMatcher.start());
+            ends.add(rowMatcher.end());
+        }
+        if (rows.size() < 3) {
+            return xml;
+        }
 
-            Row detailTitleRow = sheet.createRow(rowIndex);
-            Cell detailTitleCell = detailTitleRow.createCell(0);
-            detailTitleCell.setCellValue("检验项目明细");
-            detailTitleCell.setCellStyle(styles.subTitle);
-            merge(sheet, rowIndex, rowIndex);
-            rowIndex++;
-
-            Row headerRow = sheet.createRow(rowIndex++);
-            for (int i = 0; i < DETAIL_HEADERS.length; i++) {
-                writeCell(headerRow, i, DETAIL_HEADERS[i], styles.header);
+        int tailIndex = -1;
+        for (int i = rows.size() - 1; i >= 1; i--) {
+            if (rows.get(i).contains("以下空白")) {
+                tailIndex = i;
+                break;
             }
+        }
+        if (tailIndex < 0) {
+            tailIndex = rows.size() - 1;
+        }
 
-            if (details.isEmpty()) {
-                Row emptyRow = sheet.createRow(rowIndex);
-                Cell emptyCell = emptyRow.createCell(0);
-                emptyCell.setCellValue("该项目暂无分解的检验项目");
-                emptyCell.setCellStyle(styles.body);
-                merge(sheet, rowIndex, rowIndex);
-                rowIndex++;
-            } else {
-                int sequence = 1;
-                for (Map<String, Object> detail : details) {
-                    Row row = sheet.createRow(rowIndex++);
-                    writeCell(row, 0, String.valueOf(sequence++), styles.body);
-                    writeCell(row, 1, text(detail.get("testItem")), styles.body);
-                    writeCell(row, 2, text(detail.get("basis")), styles.body);
-                    writeCell(row, 3, text(detail.get("mathod")), styles.body);
-                    writeCell(row, 4, text(detail.get("stdValue")), styles.body);
-                    writeCell(row, 5, text(detail.get("jyResult")), styles.body);
-                    writeCell(row, 6, text(detail.get("item_evaluate")), styles.body);
-                    writeCell(row, 7, text(detail.get("jyResult_note")), styles.body);
-                    writeCell(row, 8, userName(userNames, detail.get("userId_jyy")), styles.body);
-                    writeCell(row, 9, finishDate, styles.body);
+        String headerRow = rows.get(0);
+        String dataTemplate = rows.get(1);
+        String tailRow = rows.get(tailIndex);
+
+        StringBuilder sb = new StringBuilder();
+        sb.append(table, 0, starts.get(0));
+        sb.append(headerRow);
+        for (Map<String, Object> item : details) {
+            sb.append(fillRow(dataTemplate, rowValues(item)));
+        }
+        sb.append(tailRow);
+        sb.append(table.substring(ends.get(rows.size() - 1)));
+
+        return xml.substring(0, tableStart) + sb + xml.substring(tableEnd);
+    }
+
+    /** 按单元格顺序替换一行中的 7 个文本节点 */
+    private String fillRow(String row, String[] values) {
+        Matcher cellMatcher = CELL_PATTERN.matcher(row);
+        StringBuffer sb = new StringBuffer();
+        int index = 0;
+        while (cellMatcher.find()) {
+            String cell = cellMatcher.group();
+            if (index < values.length) {
+                Matcher textMatcher = TEXT_PATTERN.matcher(cell);
+                if (textMatcher.find()) {
+                    String attributes = textMatcher.group(1) == null ? "" : textMatcher.group(1);
+                    String replacement = "<w:t" + attributes + ">" + esc(values[index]) + "</w:t>";
+                    cell = cell.substring(0, textMatcher.start())
+                            + replacement
+                            + cell.substring(textMatcher.end());
                 }
             }
-
-            rowIndex++;
-            Row footerRow = sheet.createRow(rowIndex);
-            Cell footerCell = footerRow.createCell(0);
-            footerCell.setCellValue("本报告由 LIMS 系统按项目登记与检验数据自动生成。");
-            footerCell.setCellStyle(styles.footer);
-            merge(sheet, rowIndex, rowIndex);
-
-            for (int i = 0; i <= LAST_COLUMN; i++) {
-                sheet.setColumnWidth(i, 16 * 256);
-            }
-            sheet.setColumnWidth(1, 26 * 256);
-            sheet.setColumnWidth(3, 30 * 256);
-            sheet.setColumnWidth(7, 22 * 256);
-
-            workbook.write(output);
-            return output.toByteArray();
-        } catch (IOException exception) {
-            throw new BusinessException(ResultCode.INTERNAL_ERROR.getCode(), "报告生成失败");
+            cellMatcher.appendReplacement(sb, Matcher.quoteReplacement(cell));
+            index++;
         }
+        cellMatcher.appendTail(sb);
+        return sb.toString();
     }
 
-    private void merge(Sheet sheet, int firstRow, int lastRow) {
-        sheet.addMergedRegion(new CellRangeAddress(firstRow, lastRow, 0, LAST_COLUMN));
+    private String[] rowValues(Map<String, Object> item) {
+        String testItem = text(item.get("testItem"));
+        String name = testItem;
+        String unit = "";
+        int split = firstSeparator(testItem);
+        if (split > 0) {
+            name = testItem.substring(0, split).trim();
+            unit = testItem.substring(split + 1).trim();
+        }
+        return new String[]{
+                name,
+                text(item.get("jyResult")),
+                text(item.get("basis")),
+                text(item.get("stdValue")),
+                unit,
+                text(item.get("num_lowerst")),
+                text(item.get("item_evaluate"))
+        };
     }
 
-    /** 一行写两组「标签 + 值」，值跨列以便阅读 */
-    private int writeInfoRow(Sheet sheet, int rowIndex, Styles styles,
-                             String label1, String value1,
-                             String label2, String value2) {
-        Row row = sheet.createRow(rowIndex);
-        row.setHeightInPoints(19);
-        writeCell(row, 0, label1, styles.label);
-        writeCell(row, 1, value1, styles.value);
-        sheet.addMergedRegion(new CellRangeAddress(rowIndex, rowIndex, 1, 4));
-        writeCell(row, 5, label2, styles.label);
-        writeCell(row, 6, value2, styles.value);
-        sheet.addMergedRegion(new CellRangeAddress(rowIndex, rowIndex, 6, LAST_COLUMN));
-        return rowIndex + 1;
+    private String conclusionText(String basis, List<Map<String, Object>> details) {
+        if (details.isEmpty()) {
+            return "本样品暂无检验数据。";
+        }
+        List<String> failed = new ArrayList<>();
+        for (Map<String, Object> item : details) {
+            if ("不合格".equals(text(item.get("item_evaluate")))) {
+                String name = text(item.get("testItem"));
+                int split = firstSeparator(name);
+                failed.add(split > 0 ? name.substring(0, split).trim() : name);
+            }
+        }
+        String prefix = basis.isEmpty()
+                ? "本样品所检项目"
+                : "本样品所检项目按" + basis + "规定的要求进行判定，";
+        if (failed.isEmpty()) {
+            return prefix + "所检项目均符合要求，判定为合格。";
+        }
+        return prefix + "其中" + String.join("、", failed) + "超标，判定为不合格。";
     }
 
-    private static void writeCell(Row row, int index, String value, CellStyle style) {
-        Cell cell = row.createCell(index);
-        cell.setCellValue(value == null ? "" : value);
-        cell.setCellStyle(style);
+    private String basisList(List<Map<String, Object>> details) {
+        Set<String> values = new LinkedHashSet<>();
+        for (Map<String, Object> item : details) {
+            String basis = text(item.get("basis"));
+            if (!basis.isEmpty()) {
+                values.add(basis);
+            }
+        }
+        return String.join("、", values);
     }
 
     private Map<String, Object> loadProject(String bh) {
         List<Map<String, Object>> rows = jdbcTemplate.queryForList(
-                "SELECT * FROM project WHERE TRIM(bh) = ? ORDER BY id_nj DESC LIMIT 1", bh);
+                "SELECT * FROM project WHERE TRIM(bh) = ? ORDER BY id_nj DESC LIMIT 1",
+                text(bh)
+        );
         return rows.isEmpty() ? null : rows.get(0);
     }
 
-    private String loadTaskFinishDate(String bh) {
-        List<Map<String, Object>> rows = jdbcTemplate.queryForList(
-                "SELECT date_jyy FROM task WHERE project_bh = ? ORDER BY id", bh);
-        for (Map<String, Object> row : rows) {
-            String value = text(row.get("date_jyy"));
-            if (!value.isEmpty()) {
-                return value;
+    /** 受检单位：优先客户名称，其次样品上的受检单位、委托单位 */
+    private String unitOf(Map<String, Object> project) {
+        String customerId = text(project.get("customerId"));
+        if (!customerId.isEmpty()) {
+            List<String> names = jdbcTemplate.queryForList(
+                    "SELECT company FROM customer WHERE id = ? LIMIT 1",
+                    String.class,
+                    customerId
+            );
+            if (!names.isEmpty() && !text(names.get(0)).isEmpty()) {
+                return text(names.get(0));
             }
         }
-        return "";
+        String inspected = text(project.get("dwname_sj_nj"));
+        return inspected.isEmpty() ? text(project.get("dwname_wt_nj")) : inspected;
     }
 
-    private Map<String, String> loadUserNames() {
-        Map<String, String> names = new LinkedHashMap<>();
-        List<Map<String, Object>> rows = jdbcTemplate.queryForList("SELECT gh, name FROM `user`");
-        for (Map<String, Object> row : rows) {
-            names.put(text(row.get("gh")), text(row.get("name")));
-        }
-        return names;
-    }
-
-    private static String userName(Map<String, String> names, Object gh) {
-        String key = text(gh);
-        if (key.isEmpty()) {
+    private String samplerName(Map<String, Object> project) {
+        String gh = text(project.get("userId_cy"));
+        if (gh.isEmpty()) {
             return "";
         }
-        String name = names.get(key);
-        return name == null || name.isEmpty() ? key : name;
+        List<String> names = jdbcTemplate.queryForList(
+                "SELECT name FROM `user` WHERE gh = ? LIMIT 1",
+                String.class,
+                gh
+        );
+        return names.isEmpty() ? gh : text(names.get(0));
+    }
+
+    private String dateRange(Object start, Object end) {
+        String from = cnDate(text(start));
+        String to = cnDate(text(end));
+        if (from.isEmpty()) {
+            from = to;
+        }
+        if (to.isEmpty()) {
+            to = from;
+        }
+        if (from.isEmpty()) {
+            return "";
+        }
+        return from + "~" + to;
+    }
+
+    private String cnDate(String raw) {
+        if (raw.isEmpty()) {
+            return "";
+        }
+        String normalized = raw.replace('.', '-').replace('/', '-');
+        String[] parts = normalized.split("-");
+        if (parts.length == 3) {
+            try {
+                return LocalDate.of(
+                        Integer.parseInt(parts[0]),
+                        Integer.parseInt(parts[1]),
+                        Integer.parseInt(parts[2])
+                ).format(CN_DATE);
+            } catch (NumberFormatException | java.time.DateTimeException ignored) {
+                return raw;
+            }
+        }
+        return raw;
+    }
+
+    private String readTemplate(String path) {
+        try (InputStream input = new ClassPathResource(path).getInputStream()) {
+            return new String(input.readAllBytes(), GBK);
+        } catch (IOException exception) {
+            throw new BusinessException(ResultCode.INTERNAL_ERROR.getCode(), "报告模板读取失败");
+        }
+    }
+
+    private static int firstSeparator(String value) {
+        int comma = value.indexOf(',');
+        int cnComma = value.indexOf('，');
+        if (comma < 0) {
+            return cnComma;
+        }
+        if (cnComma < 0) {
+            return comma;
+        }
+        return Math.min(comma, cnComma);
     }
 
     private static String text(Object value) {
         return value == null ? "" : String.valueOf(value).trim();
     }
 
-    private static String firstText(Object primary, String fallback) {
-        String value = text(primary);
-        return value.isEmpty() ? fallback : value;
-    }
-
-    private static final class Styles {
-
-        private final CellStyle title;
-        private final CellStyle subTitle;
-        private final CellStyle label;
-        private final CellStyle value;
-        private final CellStyle header;
-        private final CellStyle body;
-        private final CellStyle footer;
-
-        private Styles(Workbook workbook) {
-            Font titleFont = workbook.createFont();
-            titleFont.setBold(true);
-            titleFont.setFontHeightInPoints((short) 16);
-
-            Font boldFont = workbook.createFont();
-            boldFont.setBold(true);
-
-            title = workbook.createCellStyle();
-            title.setFont(titleFont);
-            title.setAlignment(HorizontalAlignment.CENTER);
-            title.setVerticalAlignment(VerticalAlignment.CENTER);
-
-            subTitle = workbook.createCellStyle();
-            subTitle.setFont(boldFont);
-            subTitle.setVerticalAlignment(VerticalAlignment.CENTER);
-
-            label = workbook.createCellStyle();
-            label.setAlignment(HorizontalAlignment.RIGHT);
-            label.setVerticalAlignment(VerticalAlignment.CENTER);
-
-            value = workbook.createCellStyle();
-            value.setAlignment(HorizontalAlignment.LEFT);
-            value.setVerticalAlignment(VerticalAlignment.CENTER);
-
-            header = workbook.createCellStyle();
-            header.setFont(boldFont);
-            header.setAlignment(HorizontalAlignment.CENTER);
-            header.setVerticalAlignment(VerticalAlignment.CENTER);
-            applyBorder(header);
-
-            body = workbook.createCellStyle();
-            body.setAlignment(HorizontalAlignment.LEFT);
-            body.setVerticalAlignment(VerticalAlignment.CENTER);
-            body.setWrapText(true);
-            applyBorder(body);
-
-            footer = workbook.createCellStyle();
-            footer.setVerticalAlignment(VerticalAlignment.CENTER);
-        }
-
-        private static void applyBorder(CellStyle style) {
-            style.setBorderTop(BorderStyle.THIN);
-            style.setBorderBottom(BorderStyle.THIN);
-            style.setBorderLeft(BorderStyle.THIN);
-            style.setBorderRight(BorderStyle.THIN);
-        }
+    private static String esc(String value) {
+        return value
+                .replace("&", "&amp;")
+                .replace("<", "&lt;")
+                .replace(">", "&gt;");
     }
 }
